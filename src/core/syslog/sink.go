@@ -17,13 +17,9 @@ import (
 const (
 	// socketType is the name of the type of unix domain socket used.
 	socketType = "unixgram"
-	// datagramChannelBufferSize is the size of the channel buffer for datagram messages.
-	// This determines how many messages can be held in the buffer before the program blocks,
-	// waiting for space to become available.
-	datagramChannelBufferSize = 1024
 	// datagramReadBufferSize is the size of the read buffer for datagram messages.
 	// This determines the maximum size of the messages that can be received via the datagram socket.
-	datagramReadBufferSize = 65536
+	datagramReadBufferSize = 131072 // 65536
 	// socketDirMode is the mode for the socket directory.
 	socketDirMode = 0770
 	// socketFileMode is the mode for the socket file.
@@ -267,7 +263,6 @@ func (s *Sink) HandleMessages() {
 
 	log.Debug("Starting to read syslog messages for socket: ", s.SocketPath())
 
-	s.parseDatagrams()
 	s.receiveDatagrams()
 }
 
@@ -324,47 +319,31 @@ func (s *Sink) receiveDatagrams() {
 		log.Fatal("Socket is closed")
 	}
 
-	s.wait.Add(1)
-	go func() {
-		defer s.wait.Done()
-		for !s.IsClosed() {
-			buffer := s.datagramPool.Get().([]byte)
-			n, readErr := s.conn.Read(buffer)
-			if readErr != nil {
-				opError, ok := readErr.(*net.OpError)
-				sleepTime := 10 * time.Millisecond
-				if ok && !opError.Temporary() && !opError.Timeout() {
-					return
-				}
-				log.Debugf("Transient error reading from socket - sleeping for %v: %v", sleepTime, readErr)
-				time.Sleep(sleepTime)
-			} else {
-				// Skip null bytes
-				for ; (n > 0) && (buffer[n-1] < 32); n-- {
-				}
-				if n > 0 {
-					s.datagramChannel <- buffer[:n]
-				}
-			}
-		}
-	}()
+	for idx := 1; idx <= 16; idx++ {
+		s.wait.Add(1)
+		go s.processDatagram()
+	}
 }
 
-// parseDatagrams method parses datagrams from the channel and invokes the
-// LineProcessor method to process the message field from the syslog event.
-func (s *Sink) parseDatagrams() {
-	if s.IsClosed() {
-		log.Fatal("Socket is closed")
-	}
-
-	s.datagramChannel = make(chan []byte, datagramChannelBufferSize)
-	s.wait.Add(1)
-	go func() {
-		defer s.wait.Done()
-		for !s.IsClosed() {
-			select {
-			case datagram := <-s.datagramChannel:
-				data, splitErr := s.splitMessageFromEvent(datagram)
+func (s *Sink) processDatagram() {
+	defer s.wait.Done()
+	for !s.IsClosed() {
+		buffer := s.datagramPool.Get().([]byte)
+		n, readErr := s.conn.Read(buffer)
+		if readErr != nil {
+			opError, ok := readErr.(*net.OpError)
+			sleepTime := 10 * time.Millisecond
+			if ok && !opError.Temporary() && !opError.Timeout() {
+				return
+			}
+			log.Debugf("Transient error reading from socket - sleeping for %v: %v", sleepTime, readErr)
+			time.Sleep(sleepTime)
+		} else {
+			// Skip null bytes
+			for ; (n > 0) && (buffer[n-1] < 32); n-- {
+			}
+			if n > 0 {
+				data, splitErr := s.splitMessageFromEvent(buffer[:n])
 				if splitErr == nil {
 					line := string(data)
 					processorErr := s.LineProcessor(line)
@@ -374,9 +353,8 @@ func (s *Sink) parseDatagrams() {
 				} else {
 					log.Warnf("Failed to split syslog message: %v", splitErr)
 				}
-
-				s.datagramPool.Put(datagram[:cap(datagram)])
 			}
 		}
-	}()
+		s.datagramPool.Put(buffer)
+	}
 }

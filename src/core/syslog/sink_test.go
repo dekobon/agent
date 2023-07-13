@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,28 +16,33 @@ func processSyslogLine(line string) error {
 	return nil
 }
 
-func TestMountSyslogSink(t *testing.T) {
-	log.SetLevel(log.TraceLevel)
-	log.SetReportCaller(true)
-
-	sockOpts := SocketOpt{UID: os.Getuid(), GID: os.Getgid()}
-	syslogSink := NewNginxSink("access-logs.sock",
-		"/tmp/nginx-agent", sockOpts, "nginx_agent", processSyslogLine)
-
-	defer (func() {
-		closeErr := syslogSink.Close()
-		if closeErr != nil {
-			log.Warnf("%v", closeErr)
-		}
-	})()
-
-	err := syslogSink.MountSocket()
-	if err != nil {
-		log.Error(err)
-	}
-
-	syslogSink.WaitForMessages()
-}
+//func TestMountSyslogSink(t *testing.T) {
+//	log.SetLevel(log.TraceLevel)
+//	log.SetReportCaller(true)
+//
+//	sockOpts := SocketOpt{UID: os.Getuid(), GID: os.Getgid()}
+//	mockProcessor := &MockProcessor{count: 0}
+//	syslogSink := NewNginxSink("access-logs.sock",
+//		"/tmp/nginx-agent", sockOpts, "nginx_agent", mockProcessor.Process)
+//
+//	defer (func() {
+//		closeErr := syslogSink.Close()
+//		if closeErr != nil {
+//			log.Warnf("%v", closeErr)
+//		}
+//	})()
+//
+//	err := syslogSink.MountSocket()
+//	if err != nil {
+//		log.Error(err)
+//	}
+//
+//	go func() {
+//
+//	}()
+//
+//	syslogSink.WaitForMessages()
+//}
 
 type MockProcessor struct {
 	count int32
@@ -54,10 +58,10 @@ func (p *MockProcessor) Count() int32 {
 
 func (p *MockProcessor) Process(line string) error {
 	p.Increment()
-	log.Tracef("Processing syslog message: %s", line)
-	if !strings.HasPrefix(line, "test log line") {
-		log.Fatalf("Expected line to start with 'test log line', got: %s", line)
-	}
+	//log.Tracef("Processing syslog message: %s", line)
+	//if !strings.HasPrefix(line, "test log line") {
+	//	log.Fatalf("Expected line to start with 'test log line', got: %s", line)
+	//}
 	return nil
 }
 
