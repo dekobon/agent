@@ -398,11 +398,13 @@ func updateNginxConfigWithAccessLog(file string, format string, nginxConfig *pro
 		Readable: false,
 	}
 
-	info, err := os.Stat(file)
-	if err == nil {
-		// survivable error
-		al.Readable = true
-		al.Permissions = filesSDK.GetPermissions(info.Mode())
+	if !strings.HasPrefix("syslog:", file) {
+		info, err := os.Stat(file)
+		if err == nil {
+			// survivable error
+			al.Readable = true
+			al.Permissions = filesSDK.GetPermissions(info.Mode())
+		}
 	}
 
 	if formatMap[format] != "" {
@@ -445,11 +447,14 @@ func updateNginxConfigWithErrorLog(
 		LogLevel: level,
 		Readable: false,
 	}
-	info, err := os.Stat(file)
-	if err == nil {
-		// survivable error
-		el.Permissions = filesSDK.GetPermissions(info.Mode())
-		el.Readable = true
+
+	if !strings.HasPrefix("syslog:", file) {
+		info, err := os.Stat(file)
+		if err == nil {
+			// survivable error
+			el.Permissions = filesSDK.GetPermissions(info.Mode())
+			el.Readable = true
+		}
 	}
 
 	nginxConfig.ErrorLogs.ErrorLog = append(nginxConfig.ErrorLogs.ErrorLog, el)
