@@ -3,8 +3,6 @@ package syslog
 import (
 	"bufio"
 	"bytes"
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
 	"os"
@@ -12,6 +10,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -25,9 +26,9 @@ const (
 	// This determines the maximum size of the messages that can be received via the datagram socket.
 	datagramReadBufferSize = 65536
 	// socketDirMode is the mode for the socket directory.
-	socketDirMode = 0770
+	socketDirMode = 0o770
 	// socketFileMode is the mode for the socket file.
-	socketFileMode     = 0660
+	socketFileMode     = 0o660
 	totalBufferWorkers = 8
 )
 
@@ -99,8 +100,8 @@ func (s *Sink) socketType() string {
 // NewNginxSink creates a new Sink struct used to manage and handle syslog messages.
 // This instance is configured for NGINX logs because it ignores all syslog fields.
 func NewNginxSink(socketName string, socketDir string, socketOpt SocketOpt, syslogTag string,
-	lineProcessor ProcessNginxAccessLogLine) *Sink {
-
+	lineProcessor ProcessNginxAccessLogLine,
+) *Sink {
 	if lineProcessor == nil {
 		log.Fatal("lineProcessor cannot be nil")
 	}
@@ -123,7 +124,8 @@ func NewNginxSink(socketName string, socketDir string, socketOpt SocketOpt, sysl
 		datagramPool: sync.Pool{
 			New: func() interface{} {
 				return make([]byte, datagramReadBufferSize)
-			}},
+			},
+		},
 	}
 
 	return sink

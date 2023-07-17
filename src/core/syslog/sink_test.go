@@ -2,7 +2,6 @@ package syslog
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"net"
 	"os"
 	"path/filepath"
@@ -10,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func processSyslogLine(line string) error {
