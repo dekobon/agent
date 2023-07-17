@@ -17,13 +17,18 @@ import (
 const (
 	// socketType is the name of the type of unix domain socket used.
 	socketType = "unixgram"
+	// datagramChannelBufferSize is the size of the channel buffer for datagram messages.
+	// This determines how many messages can be held in the buffer before the program blocks,
+	// waiting for space to become available.
+	datagramChannelBufferSize = 4096
 	// datagramReadBufferSize is the size of the read buffer for datagram messages.
 	// This determines the maximum size of the messages that can be received via the datagram socket.
-	datagramReadBufferSize = 131072 // 65536
+	datagramReadBufferSize = 65536
 	// socketDirMode is the mode for the socket directory.
 	socketDirMode = 0770
 	// socketFileMode is the mode for the socket file.
-	socketFileMode = 0660
+	socketFileMode     = 0660
+	totalBufferWorkers = 8
 )
 
 // atomicBool is a boolean type that can be accessed atomically.
@@ -264,6 +269,7 @@ func (s *Sink) HandleMessages() {
 	log.Debug("Starting to read syslog messages for socket: ", s.SocketPath())
 
 	s.receiveDatagrams()
+	s.parseDatagrams()
 }
 
 // WaitForMessages method waits for messages to be received on the socket.
@@ -319,14 +325,13 @@ func (s *Sink) receiveDatagrams() {
 		log.Fatal("Socket is closed")
 	}
 
-	for idx := 1; idx <= 16; idx++ {
-		s.wait.Add(1)
-		go s.processDatagram()
-	}
+	s.wait.Add(1)
+	go s.processDatagram()
 }
 
 func (s *Sink) processDatagram() {
 	defer s.wait.Done()
+
 	for !s.IsClosed() {
 		buffer := s.datagramPool.Get().([]byte)
 		n, readErr := s.conn.Read(buffer)
@@ -343,7 +348,31 @@ func (s *Sink) processDatagram() {
 			for ; (n > 0) && (buffer[n-1] < 32); n-- {
 			}
 			if n > 0 {
-				data, splitErr := s.splitMessageFromEvent(buffer[:n])
+				s.datagramChannel <- buffer[:n]
+			}
+		}
+	}
+}
+
+func (s *Sink) parseDatagrams() {
+	if s.IsClosed() {
+		log.Fatal("Socket is closed")
+	}
+
+	s.datagramChannel = make(chan []byte, datagramChannelBufferSize)
+	for i := 0; i < totalBufferWorkers; i++ {
+		s.wait.Add(1)
+		go s.parseSyslogBuffer()
+	}
+}
+
+func (s *Sink) parseSyslogBuffer() {
+	{
+		defer s.wait.Done()
+		for !s.IsClosed() {
+			select {
+			case datagram := <-s.datagramChannel:
+				data, splitErr := s.splitMessageFromEvent(datagram)
 				if splitErr == nil {
 					line := string(data)
 					processorErr := s.LineProcessor(line)
@@ -353,8 +382,9 @@ func (s *Sink) processDatagram() {
 				} else {
 					log.Warnf("Failed to split syslog message: %v", splitErr)
 				}
+
+				s.datagramPool.Put(datagram[:cap(datagram)])
 			}
 		}
-		s.datagramPool.Put(buffer)
 	}
 }
